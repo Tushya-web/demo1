@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response, request, jsonify
+from flask import Flask, render_template, Response, request, jsonify , CORS
 import cv2
 import numpy as np
 import os
@@ -58,6 +58,10 @@ def scan():
     except Exception as e:
         return jsonify(status="error", message=str(e))
 
+@app1.route('/health', methods=['POST'])
+@app1.route('/health')
+def health_check():
+    return jsonify(status="ok")
 
 @app1.route('/verify', methods=['POST'])
 def verify():
@@ -90,4 +94,5 @@ def verify():
 
 
 if __name__ == '__main__':
+
     app1.run(debug=True)
