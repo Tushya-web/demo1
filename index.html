@@ -22,90 +22,80 @@
 
     <canvas id="canvas" style="display:none;"></canvas>
 
-    <script>
-        const video = document.getElementById('video');
-        const scanBtn = document.getElementById('scanBtn');
-        const verifyBtn = document.getElementById('verifyBtn');
-        const statusDiv = document.getElementById('status');
-        const canvas = document.getElementById('canvas');
-        const context = canvas.getContext('2d');
-        const url = 'https://tushya-web.github.io/demo1/';
+   <script>
+    const video = document.getElementById('video');
+    const scanBtn = document.getElementById('scanBtn');
+    const verifyBtn = document.getElementById('verifyBtn');
+    const statusDiv = document.getElementById('status');
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
 
-        
-        // Access the webcam
-        navigator.mediaDevices.getUserMedia({ video: true })
-            .then(stream => {
-                video.srcObject = stream;
-            })
-            .catch(err => {
-                console.error("Error accessing webcam: ", err);
-                statusDiv.textContent = "Error: Could not access webcam.";
+    // --- CHANGE #1: Define the full URL for your backend server ---
+    //     (Replace this placeholder with the real URL from your hosting provider)
+    const BACKEND_URL = "https://your-backend-app-url.onrender.com";
+
+
+    // Access the webcam
+    navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+            video.srcObject = stream;
+        })
+        .catch(err => {
+            console.error("Error accessing webcam: ", err);
+            statusDiv.textContent = "Error: Could not access webcam.";
+        });
+
+    // Function to capture a frame and send to the backend
+    async function captureAndSend(endpoint) { // The function now takes just the endpoint part
+        // Set canvas size to video size
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        // Draw the current video frame to the canvas
+        context.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // Get the image data from the canvas as a Base64 string
+        const imageData = canvas.toDataURL('image/jpeg');
+
+        statusDiv.textContent = 'Processing...';
+
+        try {
+            // --- CHANGE #2: Combine the backend URL and the endpoint ---
+            const response = await fetch(`${BACKEND_URL}${endpoint}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ image: imageData }),
             });
 
-        // Function to capture a frame and send to the backend
+            // This part of your code was already correct!
+            const result = await response.json();
 
-//         async function captureAndSend() {
-//   try {
-//     const response = await fetch("YOUR_API_ENDPOINT"); // Replace YOUR_API_ENDPOINT with the actual URL
-//     if (!response.ok) {
-//       // Handle non-network errors (e.g., 404, 500)
-//       console.error(`HTTP error! status: ${response.status}`);
-//     }
-//     const data = await response.json();
-//     console.log(data);
-//     // Process the fetched data
-//   } catch (error) {
-//     console.error("Fetch failed:", error);
-//     // Provide user feedback about the failed request
-//   }
-// }
-        
-        async function captureAndSend(url) {
-            // Set canvas size to video size
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            // Draw the current video frame to the canvas
-            context.drawImage(video, 0, 0, canvas.width, canvas.height);
-            // Get the image data from the canvas as a Base64 string
-            const imageData = canvas.toDataURL('image/jpeg');
-
-            statusDiv.textContent = 'Processing...';
-
-            try {
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ image: imageData }),
-                });
-                const result = await response.json();
-
-                if (result.status === 'success') {
-                    if (result.match !== undefined) { // Verification response
-                        statusDiv.textContent = result.match
-                            ? `✅ Match Found! (Confidence: ${result.confidence})`
-                            : `❌ No Match. (Confidence: ${result.confidence})`;
-                    } else { // Scan response
-                        statusDiv.textContent = `✅ ${result.message}`;
-                    }
-                } else {
-                    statusDiv.textContent = `Error: ${result.message}`;
+            if (result.status === 'success') {
+                if (result.match !== undefined) { // Verification response
+                    statusDiv.textContent = result.match
+                        ? `✅ Match Found! (Confidence: ${result.confidence})`
+                        : `❌ No Match. (Confidence: ${result.confidence})`;
+                } else { // Scan response
+                    statusDiv.textContent = `✅ ${result.message}`;
                 }
-            } catch (error) {
-                console.error('Error:', error);
-                statusDiv.textContent = 'An error occurred. Check the console.';
+            } else {
+                statusDiv.textContent = `Error: ${result.message}`;
             }
+        } catch (error) {
+            console.error('Error:', error);
+            statusDiv.textContent = 'An error occurred. Check the console.';
         }
+    }
 
-        
-        // Attach event listeners to buttons
-        scanBtn.addEventListener('click', () => captureAndSend('/scan'));
-        verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
-    </script>
+    // --- CHANGE #3: Call the function with the correct endpoint paths ---
+    // Attach event listeners to buttons
+    scanBtn.addEventListener('click', () => captureAndSend('/scan'));
+    verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
+</script>
 </body>
 
 </html>
+
 
 
 
