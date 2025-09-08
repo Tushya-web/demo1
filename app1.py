@@ -5,6 +5,7 @@ import os
 import base64
 
 app1 = Flask(__name__)
+CORS(app1)
 
 # --- Your OpenCV Config and Helpers (slightly modified) ---
 CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -96,3 +97,4 @@ def verify():
 if __name__ == '__main__':
 
     app1.run(debug=True)
+
