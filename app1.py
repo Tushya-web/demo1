@@ -1,4 +1,5 @@
-from flask import Flask, render_template, Response, request, jsonify , CORS
+from flask import Flask, render_template, Response, request, jsonify 
+from flask_cors import CORS
 import cv2
 import numpy as np
 import os
@@ -97,4 +98,5 @@ def verify():
 if __name__ == '__main__':
 
     app1.run(debug=True)
+
 
