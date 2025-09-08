@@ -29,7 +29,9 @@
         const statusDiv = document.getElementById('status');
         const canvas = document.getElementById('canvas');
         const context = canvas.getContext('2d');
+        const url = 'https://tushya-web.github.io/demo1/';
 
+        
         // Access the webcam
         navigator.mediaDevices.getUserMedia({ video: true })
             .then(stream => {
@@ -96,7 +98,7 @@
             }
         }
 
-        const backendUrl = 'https://your-app-name.onrender.com';
+        
         // Attach event listeners to buttons
         scanBtn.addEventListener('click', () => captureAndSend('/scan'));
         verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
@@ -104,5 +106,6 @@
 </body>
 
 </html>
+
 
 
