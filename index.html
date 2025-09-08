@@ -42,41 +42,41 @@
 
         // Function to capture a frame and send to the backend
 
-        async function captureAndSend() {
-  try {
-    const response = await fetch("YOUR_API_ENDPOINT"); // Replace YOUR_API_ENDPOINT with the actual URL
-    if (!response.ok) {
-      // Handle non-network errors (e.g., 404, 500)
-      console.error(`HTTP error! status: ${response.status}`);
-    }
-    const data = await response.json();
-    console.log(data);
-    // Process the fetched data
-  } catch (error) {
-    console.error("Fetch failed:", error);
-    // Provide user feedback about the failed request
-  }
-}
+//         async function captureAndSend() {
+//   try {
+//     const response = await fetch("YOUR_API_ENDPOINT"); // Replace YOUR_API_ENDPOINT with the actual URL
+//     if (!response.ok) {
+//       // Handle non-network errors (e.g., 404, 500)
+//       console.error(`HTTP error! status: ${response.status}`);
+//     }
+//     const data = await response.json();
+//     console.log(data);
+//     // Process the fetched data
+//   } catch (error) {
+//     console.error("Fetch failed:", error);
+//     // Provide user feedback about the failed request
+//   }
+// }
         
-        // async function captureAndSend(url) {
-        //     // Set canvas size to video size
-        //     canvas.width = video.videoWidth;
-        //     canvas.height = video.videoHeight;
-        //     // Draw the current video frame to the canvas
-        //     context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        //     // Get the image data from the canvas as a Base64 string
-        //     const imageData = canvas.toDataURL('image/jpeg');
+        async function captureAndSend(url) {
+            // Set canvas size to video size
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            // Draw the current video frame to the canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // Get the image data from the canvas as a Base64 string
+            const imageData = canvas.toDataURL('image/jpeg');
 
-        //     statusDiv.textContent = 'Processing...';
+            statusDiv.textContent = 'Processing...';
 
-        //     try {
-        //         const response = await fetch(url, {
-        //             method: 'POST',
-        //             headers: {
-        //                 'Content-Type': 'application/json',
-        //             },
-        //             body: JSON.stringify({ image: imageData }),
-        //         });
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData }),
+                });
                 const result = await response.json();
 
                 if (result.status === 'success') {
@@ -104,4 +104,5 @@
 </body>
 
 </html>
+
 
