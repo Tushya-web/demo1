@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Face Verification</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; margin-top: 50px; }
+        #video { border: 2px solid #333; }
+        .button-container { margin-top: 20px; }
+        button { padding: 10px 20px; font-size: 16px; margin: 5px; cursor: pointer; }
+        #status { margin-top: 20px; font-size: 1.2em; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Face Verification</h1>
+    <video id="video" width="640" height="480" autoplay></video>
+    <div class="button-container">
+        <button id="scanBtn">1. Scan Reference Face</button>
+        <button id="verifyBtn">2. Verify Face</button>
+    </div>
+    <div id="status">Status: Awaiting action...</div>
+
+    <canvas id="canvas" style="display:none;"></canvas>
+
+    <script>
+        const video = document.getElementById('video');
+        const scanBtn = document.getElementById('scanBtn');
+        const verifyBtn = document.getElementById('verifyBtn');
+        const statusDiv = document.getElementById('status');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+
+        // Access the webcam
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                console.error("Error accessing webcam: ", err);
+                statusDiv.textContent = "Error: Could not access webcam.";
+            });
+
+        // Function to capture a frame and send to the backend
+        async function captureAndSend(url) {
+            // Set canvas size to video size
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            // Draw the current video frame to the canvas
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            // Get the image data from the canvas as a Base64 string
+            const imageData = canvas.toDataURL('image/jpeg');
+
+            statusDiv.textContent = 'Processing...';
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData }),
+                });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    if (result.match !== undefined) { // Verification response
+                        statusDiv.textContent = result.match
+                            ? `✅ Match Found! (Confidence: ${result.confidence})`
+                            : `❌ No Match. (Confidence: ${result.confidence})`;
+                    } else { // Scan response
+                        statusDiv.textContent = `✅ ${result.message}`;
+                    }
+                } else {
+                    statusDiv.textContent = `Error: ${result.message}`;
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusDiv.textContent = 'An error occurred. Check the console.';
+            }
+        }
+
+        // Attach event listeners to buttons
+        scanBtn.addEventListener('click', () => captureAndSend('/scan'));
+        verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
+    </script>
+</body>
+</html>
