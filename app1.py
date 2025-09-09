@@ -12,7 +12,7 @@ CORS(app)
 # --- Your OpenCV Config and Helpers (slightly modified) ---
 CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
 FACE_SIZE = (250, 250)
-THRESHOLD = 50.0
+THRESHOLD = 60.0
 
 face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
 recognizer = cv2.face.LBPHFaceRecognizer_create()
@@ -98,4 +98,5 @@ def verify():
 # --- CHANGE #3: The final run block now uses 'app' ---
 if __name__ == '__main__':
     app.run(debug=True)
+
 
