@@ -1,12 +1,13 @@
-from flask import Flask, render_template, Response, request, jsonify 
+from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 import cv2
 import numpy as np
 import os
 import base64
 
-app1 = Flask(__name__)
-CORS(app1)
+# --- CHANGE #1: The variable is now named 'app' ---
+app = Flask(__name__)
+CORS(app)
 
 # --- Your OpenCV Config and Helpers (slightly modified) ---
 CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
@@ -18,6 +19,7 @@ recognizer = cv2.face.LBPHFaceRecognizer_create()
 
 # This will store our reference face in memory
 reference_face = None
+reference_face_trained = False # Added a flag to track training
 
 def detect_largest_face(gray, cascade):
     faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
@@ -30,54 +32,52 @@ def crop_and_normalize(gray, bbox, size=FACE_SIZE):
     face = gray[y:y+h, x:x+w]
     return cv2.resize(face, size, interpolation=cv2.INTER_LINEAR)
 
+def base64_to_image(base64_string):
+    if "," in base64_string:
+        base64_string = base64_string.split(',')[1]
+    img_bytes = base64.b64decode(base64_string)
+    nparr = np.frombuffer(img_bytes, np.uint8)
+    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
 # --- Flask Routes ---
-
-@app1.route('/')
+# --- CHANGE #2: All route decorators now use 'app' ---
+@app.route('/')
 def index():
-    """Render the main HTML page."""
-    return render_template('index.html')
+    # This route is mainly for local testing and won't be used by your frontend on GitHub Pages
+    return "Backend is running. This page is not intended for direct access."
 
-@app1.route('/scan', methods=['POST'])
+@app.route('/scan', methods=['POST'])
 def scan():
-    """Scan and save the reference face."""
-    global reference_face
+    global reference_face, reference_face_trained
     try:
-        # Get image from the POST request
-        img_data = request.json['image'].split(',')[1]
-        img_bytes = base64.b64decode(img_data)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
+        img_data = request.json['image']
+        frame = base64_to_image(img_data)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         bbox = detect_largest_face(gray, face_cascade)
 
         if bbox is not None:
             reference_face = crop_and_normalize(gray, bbox)
             recognizer.train([reference_face], np.array([1], dtype=np.int32))
+            reference_face_trained = True
             return jsonify(status="success", message="Reference face scanned!")
         else:
             return jsonify(status="error", message="No face detected.")
     except Exception as e:
+        print(f"Error in /scan: {e}")
         return jsonify(status="error", message=str(e))
 
-@app1.route('/health', methods=['POST'])
-@app1.route('/health')
+@app.route('/health')
 def health_check():
     return jsonify(status="ok")
 
-@app1.route('/verify', methods=['POST'])
+@app.route('/verify', methods=['POST'])
 def verify():
-    """Verify a new face against the reference."""
-    if reference_face is None:
+    if not reference_face_trained:
         return jsonify(status="error", message="Please scan a reference face first.")
 
     try:
-        # Get image from the POST request
-        img_data = request.json['image'].split(',')[1]
-        img_bytes = base64.b64decode(img_data)
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
+        img_data = request.json['image']
+        frame = base64_to_image(img_data)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         bbox = detect_largest_face(gray, face_cascade)
 
@@ -92,11 +92,10 @@ def verify():
         else:
             return jsonify(status="error", message="No face detected for verification.")
     except Exception as e:
+        print(f"Error in /verify: {e}")
         return jsonify(status="error", message=str(e))
 
-
+# --- CHANGE #3: The final run block now uses 'app' ---
 if __name__ == '__main__':
-
-    app1.run(debug=True)
-
+    app.run(debug=True)
 
