@@ -1,76 +1,104 @@
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # suppress TF warnings & info logs
-
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import cv2
 import numpy as np
 import base64
-from deepface import DeepFace
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-# Initialize Flask
+# -------------------
+# Config
+# -------------------
 app = Flask(__name__)
 CORS(app)
 
-# Helper: decode base64 -> OpenCV image
-def decode_image(base64_str):
-    img_data = base64.b64decode(base64_str)
+MODEL_PATH = "arcface_r100.onnx"
+FACE_CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+
+net = cv2.dnn.readNetFromONNX(MODEL_PATH)
+face_cascade = cv2.CascadeClassifier(FACE_CASCADE_PATH)
+
+reference_embedding = None  # store reference after /scan
+
+# -------------------
+# Utils
+# -------------------
+def preprocess_face(face_img, size=(112, 112)):
+    face = cv2.resize(face_img, size)
+    face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+    face = face.astype(np.float32) / 127.5 - 1.0  # normalize [-1, 1]
+    face = np.transpose(face, (2, 0, 1))  # HWC -> CHW
+    face = np.expand_dims(face, axis=0)   # add batch
+    return face
+
+def get_embedding(face_img):
+    blob = preprocess_face(face_img)
+    net.setInput(blob)
+    embedding = net.forward()
+    embedding = embedding.flatten()
+    embedding = embedding / np.linalg.norm(embedding)  # L2 normalize
+    return embedding
+
+def cosine_similarity(a, b):
+    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+
+def extract_face(img):
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+
+    if len(faces) == 0:
+        return None
+    (x, y, w, h) = faces[0]
+    return img[y:y+h, x:x+w]
+
+def decode_image(base64_string):
+    base64_string = base64_string.split(",")[1]  # remove "data:image/jpeg;base64,"
+    img_data = base64.b64decode(base64_string)
     np_arr = np.frombuffer(img_data, np.uint8)
     return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-# API: get face embedding
-@app.route("/embedding", methods=["POST"])
-def get_embedding():
-    try:
-        data = request.get_json()
-        img_base64 = data.get("image")
+# -------------------
+# Routes
+# -------------------
+@app.route("/scan", methods=["POST"])
+def scan_face():
+    global reference_embedding
 
-        if not img_base64:
-            return jsonify({"error": "No image provided"}), 400
+    data = request.get_json()
+    img = decode_image(data["image"])
+    face = extract_face(img)
 
-        img = decode_image(img_base64)
+    if face is None:
+        return jsonify({"status": "error", "message": "No face detected"})
 
-        embedding = DeepFace.represent(
-            img_path=img,
-            model_name="ArcFace",
-            detector_backend="opencv",
-            enforce_detection=True
-        )[0]["embedding"]
+    reference_embedding = get_embedding(face)
+    return jsonify({"status": "success", "message": "Reference face stored"})
 
-        return jsonify({"embedding": embedding})
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# API: compare two images (face verification)
 @app.route("/verify", methods=["POST"])
-def verify_faces():
-    try:
-        data = request.get_json()
-        img1_base64 = data.get("image1")
-        img2_base64 = data.get("image2")
+def verify_face():
+    global reference_embedding
 
-        if not img1_base64 or not img2_base64:
-            return jsonify({"error": "Two images required"}), 400
+    if reference_embedding is None:
+        return jsonify({"status": "error", "message": "No reference face stored. Please scan first."})
 
-        img1 = decode_image(img1_base64)
-        img2 = decode_image(img2_base64)
+    data = request.get_json()
+    img = decode_image(data["image"])
+    face = extract_face(img)
 
-        emb1 = DeepFace.represent(img1, model_name="ArcFace", detector_backend="opencv")[0]["embedding"]
-        emb2 = DeepFace.represent(img2, model_name="ArcFace", detector_backend="opencv")[0]["embedding"]
+    if face is None:
+        return jsonify({"status": "error", "message": "No face detected"})
 
-        # Cosine similarity
-        sim = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
-        is_same = sim > 0.7  # threshold (tune as needed)
+    test_embedding = get_embedding(face)
+    similarity = cosine_similarity(reference_embedding, test_embedding)
 
-        return jsonify({
-            "similarity": float(sim),
-            "verified": bool(is_same)
-        })
+    match = similarity > 0.5  # threshold, can adjust
+    return jsonify({
+        "status": "success",
+        "match": bool(match),
+        "confidence": float(similarity)
+    })
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# Run app
+# -------------------
+# Run (for local dev)
+# -------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
