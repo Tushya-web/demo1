@@ -1,3 +1,6 @@
+import os
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "2"  # suppress TF warnings & info logs
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import cv2
@@ -5,71 +8,69 @@ import numpy as np
 import base64
 from deepface import DeepFace
 
+# Initialize Flask
 app = Flask(__name__)
 CORS(app)
 
-reference_embedding = None  # Store reference face embedding
+# Helper: decode base64 -> OpenCV image
+def decode_image(base64_str):
+    img_data = base64.b64decode(base64_str)
+    np_arr = np.frombuffer(img_data, np.uint8)
+    return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-def base64_to_image(base64_string):
-    """Convert base64 string to OpenCV image"""
-    if "," in base64_string:
-        base64_string = base64_string.split(",")[1]
-    img_bytes = base64.b64decode(base64_string)
-    nparr = np.frombuffer(img_bytes, np.uint8)
-    return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-
-def get_face_embedding(img):
-    """Extract face embedding using DeepFace"""
-    result = DeepFace.represent(img, model_name="Facenet", enforce_detection=True)
-    return np.array(result[0]["embedding"])
-
-@app.route("/")
-def index():
-    return "AttendEase DeepFace Backend running with Python 3.13!"
-
-@app.route("/health")
-def health():
-    return jsonify(status="ok")
-
-@app.route("/scan", methods=["POST"])
-def scan():
-    global reference_embedding
+# API: get face embedding
+@app.route("/embedding", methods=["POST"])
+def get_embedding():
     try:
-        img_data = request.json["image"]
-        frame = base64_to_image(img_data)
+        data = request.get_json()
+        img_base64 = data.get("image")
 
-        reference_embedding = get_face_embedding(frame)
-        return jsonify(status="success", message="Reference face scanned!")
+        if not img_base64:
+            return jsonify({"error": "No image provided"}), 400
+
+        img = decode_image(img_base64)
+
+        embedding = DeepFace.represent(
+            img_path=img,
+            model_name="ArcFace",
+            detector_backend="opencv",
+            enforce_detection=True
+        )[0]["embedding"]
+
+        return jsonify({"embedding": embedding})
+
     except Exception as e:
-        print("Error in /scan:", e)
-        return jsonify(status="error", message=str(e))
+        return jsonify({"error": str(e)}), 500
 
+# API: compare two images (face verification)
 @app.route("/verify", methods=["POST"])
-def verify():
-    global reference_embedding
-    if reference_embedding is None:
-        return jsonify(status="error", message="Please scan a reference face first.")
-
+def verify_faces():
     try:
-        img_data = request.json["image"]
-        frame = base64_to_image(img_data)
+        data = request.get_json()
+        img1_base64 = data.get("image1")
+        img2_base64 = data.get("image2")
 
-        test_embedding = get_face_embedding(frame)
+        if not img1_base64 or not img2_base64:
+            return jsonify({"error": "Two images required"}), 400
+
+        img1 = decode_image(img1_base64)
+        img2 = decode_image(img2_base64)
+
+        emb1 = DeepFace.represent(img1, model_name="ArcFace", detector_backend="opencv")[0]["embedding"]
+        emb2 = DeepFace.represent(img2, model_name="ArcFace", detector_backend="opencv")[0]["embedding"]
 
         # Cosine similarity
-        cosine = np.dot(reference_embedding, test_embedding) / (
-            np.linalg.norm(reference_embedding) * np.linalg.norm(test_embedding)
-        )
+        sim = np.dot(emb1, emb2) / (np.linalg.norm(emb1) * np.linalg.norm(emb2))
+        is_same = sim > 0.7  # threshold (tune as needed)
 
-        # Threshold (higher = stricter match)
-        if cosine > 0.65:
-            return jsonify(status="success", match=True, similarity=f"{cosine:.4f}")
-        else:
-            return jsonify(status="success", match=False, similarity=f"{cosine:.4f}")
+        return jsonify({
+            "similarity": float(sim),
+            "verified": bool(is_same)
+        })
 
     except Exception as e:
-        print("Error in /verify:", e)
-        return jsonify(status="error", message=str(e))
+        return jsonify({"error": str(e)}), 500
 
+# Run app
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000)
