@@ -30,10 +30,8 @@
     const canvas = document.getElementById('canvas');
     const context = canvas.getContext('2d');
 
-    // --- CHANGE #1: Define the full URL for your backend server ---
-    //     (Replace this placeholder with the real URL from your hosting provider)
+    // 🔗 Replace with your backend URL
     const BACKEND_URL = "https://face-oxo6.onrender.com";
-
 
     // Access the webcam
     navigator.mediaDevices.getUserMedia({ video: true })
@@ -45,37 +43,32 @@
             statusDiv.textContent = "Error: Could not access webcam.";
         });
 
-    // Function to capture a frame and send to the backend
-    async function captureAndSend(endpoint) { // The function now takes just the endpoint part
-        // Set canvas size to video size
+    // Capture a frame and send to backend
+    async function captureAndSend(endpoint) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
-        // Draw the current video frame to the canvas
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Get the image data from the canvas as a Base64 string
         const imageData = canvas.toDataURL('image/jpeg');
 
         statusDiv.textContent = 'Processing...';
 
         try {
-            // --- CHANGE #2: Combine the backend URL and the endpoint ---
             const response = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ image: imageData }),
             });
 
-            // This part of your code was already correct!
             const result = await response.json();
 
             if (result.status === 'success') {
-                if (result.match !== undefined) { // Verification response
+                if (result.match !== undefined) {
+                    // ✅ Verification response
                     statusDiv.textContent = result.match
-                        ? `✅ Match Found! (Confidence: ${result.confidence})`
-                        : `❌ No Match. (Confidence: ${result.confidence})`;
-                } else { // Scan response
+                        ? `✅ Match Found! (Similarity: ${result.similarity || result.distance})`
+                        : `❌ No Match. (Similarity: ${result.similarity || result.distance})`;
+                } else {
+                    // ✅ Scan response
                     statusDiv.textContent = `✅ ${result.message}`;
                 }
             } else {
@@ -87,17 +80,9 @@
         }
     }
 
-    // --- CHANGE #3: Call the function with the correct endpoint paths ---
-    // Attach event listeners to buttons
+    // Button actions
     scanBtn.addEventListener('click', () => captureAndSend('/scan'));
     verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
 </script>
 </body>
-
 </html>
-
-
-
-
-
-
