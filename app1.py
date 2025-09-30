@@ -29,12 +29,14 @@ reference_embedding = None  # store reference after scan
 # Helper functions
 # -------------------
 def decode_image(base64_string):
+    """Convert base64 string to OpenCV image."""
     base64_string = base64_string.split(",")[1]  # remove prefix
     img_data = base64.b64decode(base64_string)
     np_arr = np.frombuffer(img_data, np.uint8)
     return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
 def extract_face(img):
+    """Detect largest face using Haarcascade."""
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     faces = face_cascade.detectMultiScale(gray, 1.3, 5)
     if len(faces) == 0:
@@ -43,13 +45,15 @@ def extract_face(img):
     return img[y:y+h, x:x+w]
 
 def preprocess_face(face_img):
+    """Preprocess face for ArcFace ONNX model."""
     face = cv2.resize(face_img, (112, 112))
     face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
     face = face.astype(np.float32) / 128.0 - 1.0
-    face = np.transpose(face, (2, 0, 1))
+    face = np.transpose(face, (2, 0, 1))  # C,H,W
     return np.expand_dims(face, axis=0)
 
 def get_embedding(face_img):
+    """Get normalized embedding from ONNX model."""
     blob = preprocess_face(face_img)
     embedding = session.run([output_name], {input_name: blob})[0]
     embedding = embedding.flatten()
@@ -57,6 +61,7 @@ def get_embedding(face_img):
     return embedding
 
 def cosine_similarity(a, b):
+    """Compute cosine similarity between two embeddings."""
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
 # -------------------
