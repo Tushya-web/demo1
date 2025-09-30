@@ -15,7 +15,16 @@ CORS(app)
 # -------------------
 # Load ArcFace ONNX model
 # -------------------
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "arcface.onnx")
+import requests
+
+MODEL_PATH = "arcface.onnx"
+if not os.path.exists(MODEL_PATH):
+    print("Downloading ArcFace ONNX model...")
+    url = "https://huggingface.co/garavv/arcface-onnx/resolve/main/arc.onnx"
+    r = requests.get(url, allow_redirects=True)
+    open(MODEL_PATH, "wb").write(r.content)
+    print("Download completed.")
+
 session = ort.InferenceSession(MODEL_PATH)
 input_name = session.get_inputs()[0].name
 output_name = session.get_outputs()[0].name
@@ -98,3 +107,4 @@ def verify_face():
 # -------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
