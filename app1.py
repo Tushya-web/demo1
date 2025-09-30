@@ -5,106 +5,128 @@ import base64
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import onnxruntime as ort
+import requests
 
 # -------------------
-# Flask setup
+# Configuration
+# -------------------
+MODEL_URL = "https://huggingface.co/garavv/arcface-onnx/resolve/main/arc.onnx"
+MODEL_PATH = "arcface.onnx"
+FACE_CASCADE = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+FACE_SIZE = (112, 112)  # ArcFace input size
+SIMILARITY_THRESHOLD = 0.4  # Lower = stricter match
+
+# -------------------
+# Flask App
 # -------------------
 app = Flask(__name__)
 CORS(app)
 
 # -------------------
-# Load ArcFace ONNX model
+# Load ONNX Model
 # -------------------
-import requests
-
-MODEL_PATH = "arcface.onnx"
 if not os.path.exists(MODEL_PATH):
     print("Downloading ArcFace ONNX model...")
-    url = "https://huggingface.co/garavv/arcface-onnx/resolve/main/arc.onnx"
-    r = requests.get(url, allow_redirects=True)
-    open(MODEL_PATH, "wb").write(r.content)
-    print("Download completed.")
+    r = requests.get(MODEL_URL)
+    r.raise_for_status()
+    with open(MODEL_PATH, "wb") as f:
+        f.write(r.content)
+    print("Model downloaded successfully!")
 
-session = ort.InferenceSession(MODEL_PATH)
-input_name = session.get_inputs()[0].name
-output_name = session.get_outputs()[0].name
+print("Loading ArcFace model...")
+session = ort.InferenceSession(MODEL_PATH, providers=['CPUExecutionProvider'])
+print("Model loaded!")
 
-# Haarcascade for face detection
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+# Haar Cascade for face detection
+face_cascade = cv2.CascadeClassifier(FACE_CASCADE)
 
-reference_embedding = None  # store reference after scan
+# Store reference embedding
+reference_embedding = None
 
 # -------------------
-# Helper functions
+# Helper Functions
 # -------------------
-def decode_image(base64_string):
-    """Convert base64 string to OpenCV image."""
-    base64_string = base64_string.split(",")[1]  # remove prefix
-    img_data = base64.b64decode(base64_string)
-    np_arr = np.frombuffer(img_data, np.uint8)
+def base64_to_image(base64_str):
+    if "," in base64_str:
+        base64_str = base64_str.split(",")[1]
+    img_bytes = base64.b64decode(base64_str)
+    np_arr = np.frombuffer(img_bytes, np.uint8)
     return cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-def extract_face(img):
-    """Detect largest face using Haarcascade."""
+def detect_largest_face(img):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
     if len(faces) == 0:
         return None
-    x, y, w, h = faces[0]
+    # Return the largest face
+    x, y, w, h = max(faces, key=lambda r: r[2] * r[3])
     return img[y:y+h, x:x+w]
 
-def preprocess_face(face_img):
-    """Preprocess face for ArcFace ONNX model."""
-    face = cv2.resize(face_img, (112, 112))
+def preprocess_face(face):
+    face = cv2.resize(face, FACE_SIZE)
     face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-    face = face.astype(np.float32) / 128.0 - 1.0
-    face = np.transpose(face, (2, 0, 1))  # C,H,W
-    return np.expand_dims(face, axis=0)
+    face = face.astype(np.float32) / 255.0
+    face = (face - 0.5) / 0.5  # Normalize
+    return np.transpose(face, (2, 0, 1))[np.newaxis, :].astype(np.float32)
 
 def get_embedding(face_img):
-    """Get normalized embedding from ONNX model."""
-    blob = preprocess_face(face_img)
-    embedding = session.run([output_name], {input_name: blob})[0]
-    embedding = embedding.flatten()
-    embedding = embedding / np.linalg.norm(embedding)
+    face_input = preprocess_face(face_img)
+    outputs = session.run(None, {"input.1": face_input})
+    embedding = outputs[0][0]
+    # Normalize embedding
+    embedding /= np.linalg.norm(embedding)
     return embedding
 
 def cosine_similarity(a, b):
-    """Compute cosine similarity between two embeddings."""
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    return np.dot(a, b)
 
 # -------------------
 # Routes
 # -------------------
+@app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
+
 @app.route("/scan", methods=["POST"])
-def scan_face():
+def scan():
     global reference_embedding
-    data = request.get_json()
-    img = decode_image(data["image"])
-    face = extract_face(img)
-    if face is None:
-        return jsonify({"status": "error", "message": "No face detected"})
-    reference_embedding = get_embedding(face)
-    return jsonify({"status": "success", "message": "Reference face stored"})
+    try:
+        data = request.get_json()
+        img = base64_to_image(data["image"])
+        face = detect_largest_face(img)
+        if face is None:
+            return jsonify({"status": "error", "message": "No face detected"})
+        reference_embedding = get_embedding(face)
+        return jsonify({"status": "success", "message": "Reference face stored"})
+    except Exception as e:
+        print("Scan error:", e)
+        return jsonify({"status": "error", "message": str(e)})
 
 @app.route("/verify", methods=["POST"])
-def verify_face():
+def verify():
     global reference_embedding
     if reference_embedding is None:
-        return jsonify({"status": "error", "message": "No reference face stored"})
-    data = request.get_json()
-    img = decode_image(data["image"])
-    face = extract_face(img)
-    if face is None:
-        return jsonify({"status": "error", "message": "No face detected"})
-    test_embedding = get_embedding(face)
-    similarity = cosine_similarity(reference_embedding, test_embedding)
-    match = similarity > 0.5  # adjust threshold as needed
-    return jsonify({"status": "success", "match": bool(match), "similarity": float(similarity)})
+        return jsonify({"status": "error", "message": "No reference face scanned"})
+    try:
+        data = request.get_json()
+        img = base64_to_image(data["image"])
+        face = detect_largest_face(img)
+        if face is None:
+            return jsonify({"status": "error", "message": "No face detected"})
+        emb = get_embedding(face)
+        similarity = float(cosine_similarity(reference_embedding, emb))
+        match = similarity > SIMILARITY_THRESHOLD
+        return jsonify({
+            "status": "success",
+            "match": match,
+            "similarity": round(similarity, 4)
+        })
+    except Exception as e:
+        print("Verify error:", e)
+        return jsonify({"status": "error", "message": str(e)})
 
 # -------------------
-# Run Flask
+# Run Server
 # -------------------
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
+    app.run(host="0.0.0.0", port=5000, debug=True)
