@@ -22,7 +22,7 @@
 
     <canvas id="canvas" style="display:none;"></canvas>
 
-   <script>
+    <script>
     const video = document.getElementById('video');
     const scanBtn = document.getElementById('scanBtn');
     const verifyBtn = document.getElementById('verifyBtn');
@@ -30,14 +30,12 @@
     const canvas = document.getElementById('canvas');
     const context = canvas.getContext('2d');
 
-    // 🔗 Replace with your backend URL
+    // 🔗 Replace this with your deployed Flask backend URL
     const BACKEND_URL = "https://face-oxo6.onrender.com";
 
     // Access the webcam
     navigator.mediaDevices.getUserMedia({ video: true })
-        .then(stream => {
-            video.srcObject = stream;
-        })
+        .then(stream => video.srcObject = stream)
         .catch(err => {
             console.error("Error accessing webcam: ", err);
             statusDiv.textContent = "Error: Could not access webcam.";
@@ -56,33 +54,40 @@
             const response = await fetch(`${BACKEND_URL}${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ image: imageData }),
+                body: JSON.stringify({ image: imageData })
             });
 
             const result = await response.json();
 
             if (result.status === 'success') {
                 if (result.match !== undefined) {
-                    // ✅ Verification response
-                    statusDiv.textContent = result.match
-                        ? `✅ Match Found! (Similarity: ${result.similarity || result.distance})`
-                        : `❌ No Match. (Similarity: ${result.similarity || result.distance})`;
+                    // Verification response
+                    if (result.match) {
+                        statusDiv.textContent = `✅ Match Found! Similarity: ${result.similarity}`;
+                        statusDiv.style.color = 'green';
+                    } else {
+                        statusDiv.textContent = `❌ No Match. Similarity: ${result.similarity}`;
+                        statusDiv.style.color = 'red';
+                    }
                 } else {
-                    // ✅ Scan response
+                    // Scan response
                     statusDiv.textContent = `✅ ${result.message}`;
+                    statusDiv.style.color = 'blue';
                 }
             } else {
                 statusDiv.textContent = `Error: ${result.message}`;
+                statusDiv.style.color = 'orange';
             }
-        } catch (error) {
-            console.error('Error:', error);
-            statusDiv.textContent = 'An error occurred. Check the console.';
+        } catch (err) {
+            console.error('Error:', err);
+            statusDiv.textContent = 'Error communicating with server.';
+            statusDiv.style.color = 'orange';
         }
     }
 
     // Button actions
     scanBtn.addEventListener('click', () => captureAndSend('/scan'));
     verifyBtn.addEventListener('click', () => captureAndSend('/verify'));
-</script>
+    </script>
 </body>
 </html>
