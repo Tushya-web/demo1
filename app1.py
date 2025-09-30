@@ -1,102 +1,75 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import cv2
 import numpy as np
-import os
 import base64
+from deepface import DeepFace
 
-# --- CHANGE #1: The variable is now named 'app' ---
 app = Flask(__name__)
 CORS(app)
 
-# --- Your OpenCV Config and Helpers (slightly modified) ---
-CASCADE_PATH = cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
-FACE_SIZE = (250, 250)
-THRESHOLD = 60.0
-
-face_cascade = cv2.CascadeClassifier(CASCADE_PATH)
-recognizer = cv2.face.LBPHFaceRecognizer_create()
-
-# This will store our reference face in memory
-reference_face = None
-reference_face_trained = False # Added a flag to track training
-
-def detect_largest_face(gray, cascade):
-    faces = cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
-    if len(faces) == 0:
-        return None
-    return max(faces, key=lambda rect: rect[2] * rect[3])
-
-def crop_and_normalize(gray, bbox, size=FACE_SIZE):
-    x, y, w, h = bbox
-    face = gray[y:y+h, x:x+w]
-    return cv2.resize(face, size, interpolation=cv2.INTER_LINEAR)
+reference_embedding = None  # Store reference face embedding
 
 def base64_to_image(base64_string):
+    """Convert base64 string to OpenCV image"""
     if "," in base64_string:
-        base64_string = base64_string.split(',')[1]
+        base64_string = base64_string.split(",")[1]
     img_bytes = base64.b64decode(base64_string)
     nparr = np.frombuffer(img_bytes, np.uint8)
     return cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
-# --- Flask Routes ---
-# --- CHANGE #2: All route decorators now use 'app' ---
-@app.route('/')
+def get_face_embedding(img):
+    """Extract face embedding using DeepFace"""
+    result = DeepFace.represent(img, model_name="Facenet", enforce_detection=True)
+    return np.array(result[0]["embedding"])
+
+@app.route("/")
 def index():
-    # This route is mainly for local testing and won't be used by your frontend on GitHub Pages
-    return "Backend is running. This page is not intended for direct access."
+    return "AttendEase DeepFace Backend running with Python 3.13!"
 
-@app.route('/scan', methods=['POST'])
-def scan():
-    global reference_face, reference_face_trained
-    try:
-        img_data = request.json['image']
-        frame = base64_to_image(img_data)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        bbox = detect_largest_face(gray, face_cascade)
-
-        if bbox is not None:
-            reference_face = crop_and_normalize(gray, bbox)
-            recognizer.train([reference_face], np.array([1], dtype=np.int32))
-            reference_face_trained = True
-            return jsonify(status="success", message="Reference face scanned!")
-        else:
-            return jsonify(status="error", message="No face detected.")
-    except Exception as e:
-        print(f"Error in /scan: {e}")
-        return jsonify(status="error", message=str(e))
-
-@app.route('/health')
-def health_check():
+@app.route("/health")
+def health():
     return jsonify(status="ok")
 
-@app.route('/verify', methods=['POST'])
+@app.route("/scan", methods=["POST"])
+def scan():
+    global reference_embedding
+    try:
+        img_data = request.json["image"]
+        frame = base64_to_image(img_data)
+
+        reference_embedding = get_face_embedding(frame)
+        return jsonify(status="success", message="Reference face scanned!")
+    except Exception as e:
+        print("Error in /scan:", e)
+        return jsonify(status="error", message=str(e))
+
+@app.route("/verify", methods=["POST"])
 def verify():
-    if not reference_face_trained:
+    global reference_embedding
+    if reference_embedding is None:
         return jsonify(status="error", message="Please scan a reference face first.")
 
     try:
-        img_data = request.json['image']
+        img_data = request.json["image"]
         frame = base64_to_image(img_data)
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        bbox = detect_largest_face(gray, face_cascade)
 
-        if bbox is not None:
-            test_face = crop_and_normalize(gray, bbox)
-            label, confidence = recognizer.predict(test_face)
+        test_embedding = get_face_embedding(frame)
 
-            if confidence <= THRESHOLD:
-                return jsonify(status="success", match=True, confidence=f"{confidence:.2f}")
-            else:
-                return jsonify(status="success", match=False, confidence=f"{confidence:.2f}")
+        # Cosine similarity
+        cosine = np.dot(reference_embedding, test_embedding) / (
+            np.linalg.norm(reference_embedding) * np.linalg.norm(test_embedding)
+        )
+
+        # Threshold (higher = stricter match)
+        if cosine > 0.65:
+            return jsonify(status="success", match=True, similarity=f"{cosine:.4f}")
         else:
-            return jsonify(status="error", message="No face detected for verification.")
+            return jsonify(status="success", match=False, similarity=f"{cosine:.4f}")
+
     except Exception as e:
-        print(f"Error in /verify: {e}")
+        print("Error in /verify:", e)
         return jsonify(status="error", message=str(e))
 
-# --- CHANGE #3: The final run block now uses 'app' ---
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)
-
-
